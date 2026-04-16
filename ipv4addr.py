@@ -12,14 +12,14 @@ class IPv4Address:
 		elif isinstance(addr, int):
 			self.addr = self.addr.to_bytes(4, byteorder="big")
 
-	def to_str(self) -> str:
+	def __str__(self) -> str:
 		return ".".join(str(byte) for byte in self.addr)
 	
 	def __repr__(self) -> str:
-		return f"IPAddress({self.to_str()})"
+		return f"IPAddress({self})"
 	
 	def __and__(self, other: Self) -> Self:
-		operation = int.from_bytes(self.addr) & int.from_bytes(other.addr)
+		operation = int.from_bytes(self.addr, byteorder="big") & int.from_bytes(other.addr, byteorder="big")
 		return IPv4Address(operation)
 	
 	def __eq__(self, other: Self) -> bool:

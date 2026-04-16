@@ -7,6 +7,10 @@ from arp import ARP
 from l2socket import Socket
 
 
+class RoutingError(Exception):
+	pass
+
+
 class RoutingAction(Enum):
 	# Packet is sent back to this network card
 	LOOPBACK = 0
@@ -18,7 +22,6 @@ class RoutingAction(Enum):
 	BROADCAST = 3
 
 
-# Singleton class
 class RoutingEntry:
 	def __init__(self, address: IPv4Address, mask: IPv4Address, 
 			      interface: IPv4Address, action: RoutingAction, 
@@ -35,6 +38,7 @@ class RoutingEntry:
 		self.gateway = gateway
 
 
+# Singleton class
 class RoutingTable:
 	_instance = None
 
@@ -61,6 +65,8 @@ class RoutingTable:
 						return (ARP.query(socket, entry.gateway, entry.interface), entry.interface)
 					elif entry.action == RoutingAction.BROADCAST:
 						return (Ethernet.broadcast, entry.interface)
+					
+		raise RoutingError(f"Unable to route {address}")
 
 	def add_entry(self, entry: RoutingEntry) -> None:
 		'''
@@ -92,6 +98,7 @@ class RoutingTable:
 		'''
 		Initializes the routing table with default entries
 		'''
+		cls._instance = None
 		routing_table = cls()
 
 		full_ip = IPv4Address("255.255.255.255")

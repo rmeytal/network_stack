@@ -1,4 +1,5 @@
 from scapy.all import conf
+from typing import Union
 
 
 # Wrapper around scapy.all.conf.L2socket
@@ -6,7 +7,9 @@ from scapy.all import conf
 class Socket:
 	iface = None
 
-	def __init__(self, iface:str=iface, promisc: bool=False):
+	def __init__(self, iface: Union[str, None]=None, promisc: bool=False):
+		if iface is None:
+			iface = Socket.iface
 		self._socket = conf.L2socket(iface=iface, promisc=promisc)
 
 	def send(self, payload: bytes) -> None:

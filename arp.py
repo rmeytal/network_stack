@@ -100,7 +100,7 @@ class ARP:
 	@classmethod
 	def recv(cls, socket: Socket, timeout: int=1, filter: Union[Self, None]=None) -> Self:
 		'''
-		Receives an ARP packet
+		Receives an ARP packet. Doesn't check cache. For cache + recv use query classmethod
 		timeout - timeout for response before exception thrown (in seconds)
 		filter  - optional variable. If isn't None, function returns an ARP request that is a response to 'filter'
 		'''
@@ -110,10 +110,6 @@ class ARP:
 				raise ValueError("'filter' must either be None ARP with opcode of Request")
 			if filter._opcode != ARPOpcode.REQUEST:
 				raise ValueError("'filter' must have opcode Request")
-			
-			# Returning address if exists in caches
-			if filter.target_physical.addr in ARP.cache:
-				return ARP.cache[filter.target_physical.addr]
 			
 		start_time = time.time()
 		while True:

@@ -25,7 +25,7 @@ class ICMPType(Enum):
 class ICMP:
 	def __init__(self, destination: IPv4Address, data:bytes, 
 			  	 type: ICMPType=ICMPType.ECHO_REQUEST, code: int=0, 
-				 type_fields: dict={}
+				 type_fields: Union[dict, None]=None
 				):
 		'''
 		ICMPv4
@@ -35,7 +35,7 @@ class ICMP:
 		self._type = type
 		self._code = code
 		self._checksum = 0
-		self._type_fields = type_fields
+		self._type_fields = type_fields if type_fields is not None else {}
 
 		if self._type == ICMPType.ECHO_REQUEST or self._type == ICMPType.ECHO_REPLY:
 			# Generates fields for the user if not provided
@@ -145,7 +145,7 @@ class ICMP:
 				return ret
 			elif type_filter == ret._type:
 				if ((ret._type == ICMPType.ECHO_REQUEST or ret._type == ICMPType.ECHO_REPLY) and 
-				     identifier_filter != None):
+				     identifier_filter is not None):
 					if identifier_filter == ret._type_fields["Identifier"]:
 						return ret
 				else:
@@ -153,24 +153,3 @@ class ICMP:
 
 			if (time.time() - start_time) > timeout:
 				raise TimeoutError("No ICMP packet received")
-
-
-def main():
-	'''
-	main
-	'''
-	# dim.uchile.cl = 146.83.7.25
-	message = ICMP(IPv4Address("146.83.7.25"), b"Hello Chile")
-	print(message)
-
-	sock = Socket(promisc=True)
-	message.send(sock)
-
-	response = ICMP.recv(sock, type_filter=ICMPType.ECHO_REPLY)
-
-	sock.close()
-	print(response)
-
-
-if __name__ == "__main__":
-	main()

@@ -31,6 +31,8 @@ class EtherType(Enum):
 	# Default value indicating that type field has been replaced by length
 	LENGTH = 0
 
+	UNKNOWN = -1
+
 	IPv4 = 0x0800
 	ARP = 0x0806
 	IPv6 = 0x86DD
@@ -42,6 +44,11 @@ class EtherType(Enum):
 	GOOSE = 0x88B8
 	RARP = 0x8035
 	PROVIDER_BRIDGE_PROTOCOLS = 0x893A
+
+	def _missing_(cls, val):
+		if val < 1500:
+			return cls.LENGTH
+		return cls.UNKNOWN
 
 
 class Ethernet:
@@ -92,19 +99,12 @@ class Ethernet:
 		'''
 		header = struct.unpack("!6s6sH", raw_frame[:14])
 		data = raw_frame[14:]
-
-		if header[2] <= 1500:
-			return Ethernet(MAC(header[0]), 
-							data, 
-							source=MAC(header[1]), 
-							type=EtherType.LENGTH
-						)
 		
 		return Ethernet(MAC(header[0]), 
-							data, 
-							source=MAC(header[1]), 
-							type=EtherType(header[2])
-						)
+						data, 
+						source=MAC(header[1]), 
+						type=EtherType(header[2])
+					   )
 							
 
 	@classmethod

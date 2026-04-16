@@ -78,6 +78,7 @@ class IP:
 		# Optional field with variable length. Isn't included in header, here just for clarification
 		# self._options = 0
 
+		# Optional field, can be None. Checked and changed (if appropriate) in send
 		self._destination_mac = destination_mac
 
 		self._data = data
@@ -91,6 +92,8 @@ class IP:
 		# Getting MAC of next hop & interface
 		if self._destination_mac is None:
 			self._destination_mac, interface = IP.routing_table.route(socket, self._destination)
+		else:
+			_, interface = IP.routing_table.route(socket, self._destination)
 
 		if self._source is None:
 			self._source = interface
