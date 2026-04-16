@@ -1,8 +1,8 @@
-from scapy.all import conf
 import struct
-import uuid
 from enum import Enum
 from typing import Union, Self
+
+from l2socket import Socket
 
 
 class MAC:
@@ -15,15 +15,14 @@ class MAC:
 			self.addr = addr.to_bytes(6, byteorder="big")
 		elif isinstance(addr, str):
 			self.addr = int(addr.replace(":", "").replace("-", ""), base=16).to_bytes(6, byteorder="big")
+		elif not isinstance(addr, bytes):
+			raise ValueError("'addr' must be bytes, int or string")
+
+	def __str__(self) -> str:
+		return ":".join(f"{b:02x}" for b in self.addr)
 
 	def __repr__(self) -> str:
-		hex_chars = list(hex(int.from_bytes(self.addr, byteorder="big"))[2:].zfill(12))
-		return "MAC(" + ":".join([hex_chars[x] + hex_chars[x + 1] for x in range(0, len(hex_chars), 2)]) + ")"
-	
-# Variables cannot be initialized in the class since they are instances of the class :(
-MAC.broadcast = MAC("ff:ff:ff:ff:ff:ff")
-MAC.host_address = MAC(uuid.getnode())
-
+		return f"MAC({self})"
 
 class EtherType(Enum):
 	'''
@@ -46,11 +45,11 @@ class EtherType(Enum):
 
 
 class Ethernet:
-	# IFACE must be changed if being used on a different computer
-	socket = conf.L2socket(iface="Realtek Gaming GbE Family Controller", promisc=True)
+	broadcast = MAC("ff:ff:ff:ff:ff:ff")
+	host_addr = None
 
 	def __init__(self, destination: MAC, data: bytes, 
-			  	 type: Union[EtherType, None]=EtherType.IPv4, source: MAC=MAC.host_address):
+			  	 type: Union[EtherType, None]=EtherType.IPv4, source: Union[MAC, None]=None):
 		'''
 		destination - MAC object
 		data - bytes
@@ -58,12 +57,14 @@ class Ethernet:
 		source - MAC object
 		length - in certain standards, length replaces Ethertype and indicates data length (<1500)
 		'''
-		self.destination = destination 
+		self.destination = destination
 		self.source = source
+		if self.source is None:
+			self.source = Ethernet.host_addr
 		self.type = type 
 		self.data = data
 
-	def send(self) -> None:
+	def send(self, socket: Socket) -> None:
 		'''
 		Sends the object as an ethernet frame
 		'''
@@ -73,7 +74,7 @@ class Ethernet:
 								self.type.value
 							)
 		
-		Ethernet.socket.send(header + self.data)
+		socket.send(header + self.data)
 	
 	def __repr__(self) -> str:
 		return ("Ethernet("
@@ -84,16 +85,11 @@ class Ethernet:
 			   )
 
 	@classmethod
-	def recv(cls) -> Union[Self, None]:
+	def parse(cls, raw_frame) -> Self:
 		'''
-		Non-blocking function. Receives an ethernet frame and returns it parsed into
-		an 'Ethernet' instance.
+		Takes in a raw frame
+		Returns Ethernet object
 		'''
-		raw = Ethernet.socket.recv_raw()
-		raw_frame = raw[1]
-		if raw_frame is None:
-			return None
-		
 		header = struct.unpack("!6s6sH", raw_frame[:14])
 		data = raw_frame[14:]
 
@@ -109,16 +105,19 @@ class Ethernet:
 							source=MAC(header[1]), 
 							type=EtherType(header[2])
 						)
+							
 
+	@classmethod
+	def recv(cls, socket: Socket) -> Union[Self, None]:
+		'''
+		Non-blocking function. Receives an ethernet frame and returns it parsed into
+		an 'Ethernet' instance.
 
-def main() -> None:
-	'''
-	Sending a frame to host computer's network card
-	'''
-	frame = Ethernet(MAC.host_address, b'Hello world!')
-	frame.send()
-	print(Ethernet.recv())
+		socket - Socket object to recv from
+		'''
 
-
-if __name__ == "__main__":
-	main()
+		raw_frame = socket.recv()
+		if raw_frame is None:
+			return None
+		
+		return Ethernet.parse(raw_frame)

@@ -1,10 +1,12 @@
 import struct
 import random
 from typing import Union, Self
+import time
 
 from ip import IP, IPProtocolType, ChecksumError
 from ipv4addr import IPv4Address
 from enum import Enum
+from l2socket import Socket
 
 
 class ICMPType(Enum):
@@ -27,7 +29,6 @@ class ICMP:
 				):
 		'''
 		ICMPv4
-		Doesn't support extended headers
 		'''
 		self._destination = destination
 		self._data = data
@@ -43,7 +44,7 @@ class ICMP:
 			if "Sequence Number" not in self._type_fields:
 				self._type_fields["Sequence Number"] = 0
 
-	def send(self) -> None:
+	def send(self, socket: Socket) -> None:
 		'''
 		Calculates the checksum and sends the message
 		'''
@@ -64,7 +65,7 @@ class ICMP:
 		payload = bytes(payload)
 
 		packet = IP(self._destination, payload, protocol=IPProtocolType.ICMP)
-		packet.send()
+		packet.send(socket)
 
 	def __repr__(self) -> str:
 		ret = ("ICMP(" 
@@ -80,7 +81,7 @@ class ICMP:
 		return ret
 	
 	@classmethod
-	def parse_message(cls, packet: IP) -> Self:
+	def parse(cls, packet: IP) -> Self:
 		'''
 		Receives an ICMP packet in 'packet'
 		Returns as an ICMP object
@@ -118,35 +119,40 @@ class ICMP:
 		return ret
 
 	@classmethod
-	def recv(cls, type_filter: Union[ICMPType, None]=None, identifier_filter: Union[int, None]=None, ) -> Self:
+	def recv(cls, socket: Socket, type_filter: Union[ICMPType, None]=None, identifier_filter: Union[int, None]=None, timeout=1) -> Self:
 		'''
 		Blocks until an ICMP message is received
 		Message can be filtered by ICMP type and identifier
 
 		type_filter - Optional. Filters incoming packets by type
 		identifier_filter - Optional. Filters incoming packets with identifier field by identifier
+		timeout - function throws timeout error if no packet received
 		'''
 
+		start_time = time.time()
 		while True:
-			packet = IP.recv()
+			packet = IP.recv(socket)
 
-			# Filtering non-ICMP packets
-			if packet._protocol == IPProtocolType.ICMP:
-				try:
-					ret = ICMP.parse_message(packet)
-				except ChecksumError:
-					continue
+			try:
+				ret = ICMP.parse(packet)
+			except ChecksumError:
+				continue
+			except ValueError:
+				continue
 
-				# Applying filters, returning accordingly
-				if type_filter == None:
-					return ret
-				elif type_filter == ret._type:
-					if ((ret._type == ICMPType.ECHO_REQUEST or ret._type == ICMPType.ECHO_REPLY) and 
-					     identifier_filter != None):
-						if identifier_filter == ret._type_fields["Identifier"]:
-							return ret
-					else:
+			# Applying filters, returning accordingly
+			if type_filter is None:
+				return ret
+			elif type_filter == ret._type:
+				if ((ret._type == ICMPType.ECHO_REQUEST or ret._type == ICMPType.ECHO_REPLY) and 
+				     identifier_filter != None):
+					if identifier_filter == ret._type_fields["Identifier"]:
 						return ret
+				else:
+					return ret
+
+			if (time.time() - start_time) > timeout:
+				raise TimeoutError("No ICMP packet received")
 
 
 def main():
@@ -157,9 +163,12 @@ def main():
 	message = ICMP(IPv4Address("146.83.7.25"), b"Hello Chile")
 	print(message)
 
-	message.send()
+	sock = Socket(promisc=True)
+	message.send(sock)
 
-	response = ICMP.recv(type_filter=ICMPType.ECHO_REPLY)
+	response = ICMP.recv(sock, type_filter=ICMPType.ECHO_REPLY)
+
+	sock.close()
 	print(response)
 
 
