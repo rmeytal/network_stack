@@ -97,7 +97,7 @@ class ICMP:
 		ret._type = ICMPType(type)
 		ret._code = code
 		ret._checksum = checksum
-		ret._data = packet._data[4:]
+		ret._data = packet._data[8:]
 		ret._type_fields = {}
 
 		# Calculating checksum
@@ -114,7 +114,6 @@ class ICMP:
 		if ret._type == ICMPType.ECHO_REQUEST or ret._type == ICMPType.ECHO_REPLY:
 			(identifier, sequence_number) = struct.unpack("!HH", packet._data[4:8])
 			ret._type_fields = {"Identifier": identifier, "Sequence Number": sequence_number}
-			ret._data = packet._data[8:]
 
 		return ret
 

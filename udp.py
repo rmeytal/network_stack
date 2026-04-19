@@ -1,10 +1,12 @@
 from typing import Union, Self
 import random
 import struct
+import time
 
 from ipv4addr import IPv4Address
 from ip import IP, IPProtocolType, ChecksumError
 from icmp import ICMP, ICMPType
+from l2socket import Socket
 
 
 class UDP:
@@ -27,20 +29,17 @@ class UDP:
 		# Since UDP header is crafted in 'send', IP data is currently empty
 		self._ip_packet = IP(destination[0], b"", source=source[0], protocol=IPProtocolType.UDP)
 
-	def calculate_checksum(self, payload: bytes) -> int:
+	def get_pseudo_header(self) -> bytes:
 		'''
-		Calculates and returns (doesn't set)
-		Takes in the UDP header + data with the checksum field zeroed out
-		payload - UDP header + data (checksum = 0xffff)
+		Crafts pseudoheader for checksum calculation
 		'''
 
 		pseudo_header = struct.pack("!4s4sBBH", 
 							  		self._ip_packet._source.addr, self._ip_packet._destination.addr, 
 									0, self._ip_packet._protocol.value, self._length)
+		return pseudo_header
 
-		return IP._calculate_checksum(pseudo_header + payload)
-
-	def send(self) -> None:
+	def send(self, socket: Socket) -> None:
 		'''
 		Sends the packet to the destination
 		Since checksum is optional, it currently isn't calculated and set to 0
@@ -49,16 +48,13 @@ class UDP:
 
 		payload = raw_header + self._data
 
-		# Setting checksum
-		self._checksum = self.calculate_checksum(payload)
-		payload = list(payload)
-		payload[6] = self._checksum >> 8
-		payload[7] = self._checksum & 0xff
-		payload = bytes(payload)
+		# Setting checksum (identical to IP formula, includes pseudoheader)
+		self._checksum = IP._calculate_checksum(self.get_pseudo_header() + payload)
+		payload = UDP._change_checksum(payload, self._checksum)
 
 		# IP total_length field is changed in setter
 		self._ip_packet.data = payload
-		self._ip_packet.send()
+		self._ip_packet.send(socket)
 
 	def __repr__(self) -> str:
 		return ("UDP("
@@ -85,15 +81,24 @@ class UDP:
 		# Adding default UDP header length
 		self._length = len(self._data) + 8
 
+	@staticmethod
+	def _change_checksum(raw_payload: bytes, new_value: int) -> bytes:
+		'''
+		Changes the checksum field in raw_payload to new_value
+		'''
+		raw_payload = list(raw_payload)
+		raw_payload[6] = new_value >> 8
+		raw_payload[7] = new_value & 0xff
+		raw_payload = bytes(raw_payload)
+
+		return raw_payload
+
 	@classmethod
-	def parse_packet(cls, packet: IP) -> Self:
+	def parse(cls, packet: IP) -> Self:
 		'''
 		Takes in a raw UDP packet
 		Returns as a UDP instance
-		'''
-		if packet._protocol != IPProtocolType.UDP:
-			raise ValueError("'packet' protocol must be UDP")
-		
+		'''	
 		ret = object.__new__(cls)
 		
 		# Parsing header fields
@@ -104,35 +109,38 @@ class UDP:
 		) = struct.unpack("!HHHH", packet._data[:8])
 
 		ret._data = packet._data[8:ret._length]
+		
 		ret._ip_packet = packet
 
 		# Verifying checksum
-		raw_payload = list(packet._data)
-		raw_payload[6] = 0
-		raw_payload[7] = 0
-		raw_payload = bytes(raw_payload)
+		raw_payload = UDP._change_checksum(packet._data, 0)
 
-		calculated_checksum = ret.calculate_checksum(raw_payload)
+		# Verifying checksum (identical to IP formula, includes pseudoheader)
+		calculated_checksum = IP._calculate_checksum(ret.get_pseudo_header() + raw_payload)
 		if calculated_checksum != ret._checksum:
 			raise ChecksumError("Incorrect checksum")
 
 		return ret
 
 	@classmethod
-	def recv(cls, source_filter: Union[tuple[IPv4Address, int], None]=None) -> Union[Self, ICMP]:
+	def recv(cls, socket: Socket,
+		  	 source_filter: Union[tuple[IPv4Address, int], None]=None, timeout: int=1
+			) -> Union[Self, ICMP]:
 		'''
 		Receives a UDP packet or corresponding response if source specified
 		Blocks until receives a packet
 
 		source_filter - Optional variable. Will only return a relevant packet from the specified source.
 		ICMP packets will only be returned if the source is filtered and an ICMP packet is received from the source.
+		timeout - exception raised if no UDP packet received before timeout runs out
 		'''
-		while True:
-			packet = IP.recv()
 
-			if (
-				packet._protocol == IPProtocolType.UDP or 
-			   	(packet._protocol == IPProtocolType.ICMP and source_filter != None)
+		start_time = time.time()
+		while True:
+			packet = IP.recv(socket)
+
+			if (packet._protocol == IPProtocolType.UDP or 
+			    (packet._protocol == IPProtocolType.ICMP and source_filter != None)
 			   ):
 				# Implements source filter
 				if source_filter != None:
@@ -141,7 +149,7 @@ class UDP:
 						# If UDP, checks if port matches and returns UDP
 						if packet._protocol == IPProtocolType.UDP:
 							try:
-								ret = UDP.parse_packet(packet)
+								ret = UDP.parse(packet)
 							except ChecksumError:
 								continue
 
@@ -149,34 +157,24 @@ class UDP:
 								return ret
 						# If ICMP, checks if message type is relevant and returns ICMP
 						else:
-							# NOTE: the following line can trigger a Checksum error, intentionaly not handled
 							try:
-								ret = ICMP.parse_message(packet)
+								ret = ICMP.parse(packet)
 							except ChecksumError:
 								continue
 
 							if ret._type == ICMPType.DESTINATION_UNREACHABLE or ret._type == ICMPType.TIME_EXCEEDED:
-								return ret
+								# Verifying port of packet being responded to matches source_filter
+								# No need to check checksum, since it will definitely be valid (ICMP already checked)
+								response_to = UDP.parse(IP.parse(ret._data))
+								if response_to._destination_port == source_filter[1]:
+									return ret
 							
 				# If not filtered then protocol is definitely UDP; crafts and returns packet
 				else:
 					try:
-						return UDP.parse_packet(packet)
+						return UDP.parse(packet)
 					except ChecksumError:
 						continue
-
-
-def main() -> None:
-	# Sending a UDP packet to the router
-	udp = UDP((IPv4Address("192.168.68.1"), 9000), b"Hello destination unreachable")
-	udp.send()
-	print(udp)
-
-	# Receiving a response (presumably ICMP destination unreachable)
-	print(UDP.recv(source_filter=(IPv4Address("192.168.68.1"), 9000)))
-	# Receiving another arbitrary UDP packet
-	print(UDP.recv())
-
-
-if __name__ == "__main__":
-	main()
+		
+			if (time.time() - start_time) > timeout:
+				raise TimeoutError("No UDP packet received")

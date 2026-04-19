@@ -5,6 +5,7 @@ from arp import ARP
 from ipv4addr import IPv4Address
 from ip import IP
 from icmp import ICMP, ICMPType
+from udp import UDP
 
 
 # network_stack.init is the initialization function that must be called before using this library
@@ -51,6 +52,19 @@ def test_icmp() -> None:
 	response = ICMP.recv(sock, type_filter=ICMPType.ECHO_REPLY)
 	print(response)
 
+def test_udp() -> None:
+	# Sending a UDP packet to the router
+	udp = UDP((IPv4Address("192.168.68.1"), 9000), b"Hello destination unreachable")
+
+	udp.send(sock)
+	print(udp)
+
+	# Receiving a response (presumably ICMP destination unreachable)
+	print(UDP.recv(sock, source_filter=(IPv4Address("192.168.68.1"), 9000)))
+	# Receiving another arbitrary UDP packet
+	print(UDP.recv(sock))
+
+
 
 print("ETHERNET")
 test_ethernet()
@@ -63,5 +77,8 @@ test_ip()
 
 print("ICMP")
 test_icmp()
+
+print("UDP")
+test_udp()
 
 sock.close()
