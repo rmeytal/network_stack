@@ -130,6 +130,9 @@ class ICMP:
 
 		start_time = time.time()
 		while True:
+			if (time.time() - start_time) > timeout:
+				raise TimeoutError("No ICMP packet received")
+			
 			packet = IP.recv(socket)
 
 			try:
@@ -149,6 +152,3 @@ class ICMP:
 						return ret
 				else:
 					return ret
-
-			if (time.time() - start_time) > timeout:
-				raise TimeoutError("No ICMP packet received")

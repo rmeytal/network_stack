@@ -129,6 +129,17 @@ class IP:
 				f"checksum={hex(self._header_checksum)}, "
 				f"data={self._data})"
 			   )
+	
+	def get_pseudo_header(self, length: int) -> bytes:
+		'''
+		Crafts pseudoheader for Layer 4 checksum calculation
+		length - length of Layer 4 protocol segment
+		'''
+
+		pseudo_header = struct.pack("!4s4sBBH", 
+							  		self._source.addr, self._destination.addr, 
+									0, self._protocol.value, length)
+		return pseudo_header
 
 	@property
 	def data(self) -> bytes:
@@ -211,6 +222,9 @@ class IP:
 
 		start_time = time.time()
 		while True:
+			if (time.time() - start_time) > timeout:
+				raise TimeoutError("No IP packet received")
+			
 			frame = Ethernet.recv(socket)
 			if frame is not None:
 				if frame.type == EtherType.IPv4:
@@ -218,9 +232,6 @@ class IP:
 						return IP.parse(frame.data)
 					except ChecksumError:
 						continue
-			
-			if (time.time() - start_time) > timeout:
-				raise TimeoutError("No IP packet received")
 	
 	@staticmethod
 	def _calculate_checksum(raw: bytes) -> int:

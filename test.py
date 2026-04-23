@@ -6,6 +6,7 @@ from ipv4addr import IPv4Address
 from ip import IP
 from icmp import ICMP, ICMPType
 from udp import UDP
+from tcp import TCP, TCPFlags
 
 
 # network_stack.init is the initialization function that must be called before using this library
@@ -64,6 +65,11 @@ def test_udp() -> None:
 	# Receiving another arbitrary UDP packet
 	print(UDP.recv(sock))
 
+def test_tcp() -> None:
+	tcp = TCP((IPv4Address("192.168.68.100"), 9000), 5, 0, TCPFlags.ACK, 1000, b"Hello")
+	tcp.send(sock)
+	print(TCP.recv(sock))
+	print(TCP.recv(sock))
 
 
 print("ETHERNET")
@@ -80,5 +86,8 @@ test_icmp()
 
 print("UDP")
 test_udp()
+
+print("TCP")
+test_tcp()
 
 sock.close()

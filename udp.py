@@ -29,16 +29,6 @@ class UDP:
 		# Since UDP header is crafted in 'send', IP data is currently empty
 		self._ip_packet = IP(destination[0], b"", source=source[0], protocol=IPProtocolType.UDP)
 
-	def get_pseudo_header(self) -> bytes:
-		'''
-		Crafts pseudoheader for checksum calculation
-		'''
-
-		pseudo_header = struct.pack("!4s4sBBH", 
-							  		self._ip_packet._source.addr, self._ip_packet._destination.addr, 
-									0, self._ip_packet._protocol.value, self._length)
-		return pseudo_header
-
 	def send(self, socket: Socket) -> None:
 		'''
 		Sends the packet to the destination
@@ -49,7 +39,7 @@ class UDP:
 		payload = raw_header + self._data
 
 		# Setting checksum (identical to IP formula, includes pseudoheader)
-		self._checksum = IP._calculate_checksum(self.get_pseudo_header() + payload)
+		self._checksum = IP._calculate_checksum(self._ip_packet.get_pseudo_header(self._length) + payload)
 		payload = UDP._change_checksum(payload, self._checksum)
 
 		# IP total_length field is changed in setter
@@ -66,7 +56,7 @@ class UDP:
 	
 	@property
 	def data(self) -> bytes:
-		return self._dat
+		return self._data
 	
 	@data.setter
 	def data(self, new) -> None:
@@ -116,7 +106,7 @@ class UDP:
 		raw_payload = UDP._change_checksum(packet._data, 0)
 
 		# Verifying checksum (identical to IP formula, includes pseudoheader)
-		calculated_checksum = IP._calculate_checksum(ret.get_pseudo_header() + raw_payload)
+		calculated_checksum = IP._calculate_checksum(ret._ip_packet.get_pseudo_header(ret._length) + raw_payload)
 		if calculated_checksum != ret._checksum:
 			raise ChecksumError("Incorrect checksum")
 
@@ -137,6 +127,9 @@ class UDP:
 
 		start_time = time.time()
 		while True:
+			if (time.time() - start_time) > timeout:
+				raise TimeoutError("No UDP packet received")
+			
 			packet = IP.recv(socket)
 
 			if (packet._protocol == IPProtocolType.UDP or 
@@ -175,6 +168,3 @@ class UDP:
 						return UDP.parse(packet)
 					except ChecksumError:
 						continue
-		
-			if (time.time() - start_time) > timeout:
-				raise TimeoutError("No UDP packet received")

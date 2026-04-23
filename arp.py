@@ -15,13 +15,16 @@ class ARPOpcode(Enum):
 class ARP:
 	cache = {}
 
-	def __init__(self, target_ip: IPv4Address, sender_ip: IPv4Address,  opcode: ARPOpcode=ARPOpcode.REQUEST):
+	def __init__(self, target_ip: IPv4Address, sender_ip: IPv4Address, opcode: ARPOpcode=ARPOpcode.REQUEST, 
+			  	 sender_physical: MAC=Ethernet.host_addr, target_physical: MAC=Ethernet.broadcast):
 		'''
 		Constructs ARP packet, saves into payload class member.
 
 		target_ip - string or IPv4Address representing address looked for
 		sender_ip - string or IPv4Address representing address of searching host
 		opcode - operation of ARP packet
+		sender_physical - Layer 2 address of sending side
+		target_physical - Destination Layer 2 address
 		'''
 
 		# Hardware & protocol types (2 bytes each). Ethernet = 1
@@ -36,17 +39,17 @@ class ARP:
 		self._opcode = opcode
 
 		# Sender physical & protocol addresses
-		self.sender_physical = Ethernet.host_addr
+		self.sender_physical = sender_physical
 
 		self.sender_virtual = sender_ip
 
 		# Target physical & protocol address
-		self.target_physical = Ethernet.broadcast
+		self.target_physical = target_physical
 		self.target_virtual = target_ip
 
 	def send(self, socket: Socket) -> None:
 		'''
-		Sends ARP request
+		Sends ARP message
 		'''
 		
 		# Crafting payload & sending Ethernet frame
@@ -58,8 +61,8 @@ class ARP:
 							  self.target_physical.addr, self.target_virtual.addr
 							 )
 		
-		request = Ethernet(Ethernet.broadcast, payload, type=EtherType.ARP)
-		request.send(socket)
+		message = Ethernet(self.target_physical, payload, type=EtherType.ARP)
+		message.send(socket)
 
 	def __repr__(self) -> str:
 		return ("ARP("
@@ -85,7 +88,7 @@ class ARP:
 		 ret._opcode, 
 		 ret.sender_physical, ret.sender_virtual, 
 		 ret.target_physical, ret.target_virtual
-		) = struct.unpack("!HHBBH6s4s6s4s", raw_packet)
+		) = struct.unpack("!HHBBH6s4s6s4s", raw_packet[:28])
 
 		ret._protocol_type = EtherType(ret._protocol_type)
 		ret._opcode = ARPOpcode(ret._opcode)
@@ -113,7 +116,11 @@ class ARP:
 			
 		start_time = time.time()
 		while True:
+			if (time.time() - start_time) > timeout:
+				raise TimeoutError("No ARP packet received")
+			
 			resp = Ethernet.recv(socket)
+		
 			if resp is not None:
 				if resp.type == EtherType.ARP:
 					ret = ARP.parse(resp.data[:28])
@@ -131,9 +138,6 @@ class ARP:
 					# If the filter's target matches received packet's sending address, then returns the response
 					if filter.target_virtual == ret.sender_virtual:
 						return ret
-					
-			if (time.time() - start_time) > timeout:
-				raise TimeoutError("No ARP packet received")
 			
 	@classmethod
 	def query(cls, socket: Socket, target: IPv4Address, source: IPv4Address) -> MAC:

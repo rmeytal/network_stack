@@ -45,10 +45,8 @@ class EtherType(Enum):
 	RARP = 0x8035
 	PROVIDER_BRIDGE_PROTOCOLS = 0x893A
 
-	def _missing_(cls, val):
-		if val < 1500:
-			return cls.LENGTH
-		return cls.UNKNOWN
+	def _missing_(*args):
+		return EtherType.UNKNOWN
 
 
 class Ethernet:
@@ -56,7 +54,7 @@ class Ethernet:
 	host_addr = None
 
 	def __init__(self, destination: MAC, data: bytes, 
-			  	 type: Union[EtherType, None]=EtherType.IPv4, source: Union[MAC, None]=None):
+			  	 type: Union[EtherType, None]=EtherType.IPv4, source: MAC=host_addr):
 		'''
 		destination - MAC object
 		data - bytes
@@ -66,8 +64,6 @@ class Ethernet:
 		'''
 		self.destination = destination
 		self.source = source
-		if self.source is None:
-			self.source = Ethernet.host_addr
 		self.type = type 
 		self.data = data
 
@@ -117,7 +113,4 @@ class Ethernet:
 		'''
 
 		raw_frame = socket.recv()
-		if raw_frame is None:
-			return None
-		
-		return Ethernet.parse(raw_frame)
+		return Ethernet.parse(raw_frame) if raw_frame else None
