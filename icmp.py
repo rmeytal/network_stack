@@ -1,6 +1,6 @@
 import struct
 import random
-from typing import Union, Self
+from typing import Self, Callable
 import time
 
 from ip import IP, IPProtocolType, ChecksumError
@@ -25,7 +25,7 @@ class ICMPType(Enum):
 class ICMP:
 	def __init__(self, destination: IPv4Address, data:bytes, 
 			  	 type: ICMPType=ICMPType.ECHO_REQUEST, code: int=0, 
-				 type_fields: Union[dict, None]=None
+				 type_fields: dict | None=None, source: IPv4Address | None=None
 				):
 		'''
 		ICMPv4
@@ -36,6 +36,8 @@ class ICMP:
 		self._code = code
 		self._checksum = 0
 		self._type_fields = type_fields if type_fields is not None else {}
+		if source == None:
+			self._source = IP.host_addr
 
 		if self._type == ICMPType.ECHO_REQUEST or self._type == ICMPType.ECHO_REPLY:
 			# Generates fields for the user if not provided
@@ -64,12 +66,13 @@ class ICMP:
 		payload[3] = self._checksum & 0xff
 		payload = bytes(payload)
 
-		packet = IP(self._destination, payload, protocol=IPProtocolType.ICMP)
+		packet = IP(self._destination, payload, protocol=IPProtocolType.ICMP, source=self._source)
 		packet.send(socket)
 
 	def __repr__(self) -> str:
 		ret = ("ICMP(" 
 				f"destination={self._destination}, "
+				f"source={self._source}, "
 				f"type={self._type.name}, "
 				f"code={bin(self._code)}, "
 				f"checksum={hex(self._checksum)}, ")
@@ -94,6 +97,7 @@ class ICMP:
 
 		# Filling in fields
 		ret._destination = packet._destination
+		ret._source = packet._source
 		ret._type = ICMPType(type)
 		ret._code = code
 		ret._checksum = checksum
@@ -118,14 +122,13 @@ class ICMP:
 		return ret
 
 	@classmethod
-	def recv(cls, socket: Socket, type_filter: Union[ICMPType, None]=None, identifier_filter: Union[int, None]=None, timeout=1) -> Self:
+	def recv(cls, socket: Socket, timeout=1, filter: Callable[[Self], bool]=(lambda _: True)) -> Self:
 		'''
 		Blocks until an ICMP message is received
 		Message can be filtered by ICMP type and identifier
 
-		type_filter - Optional. Filters incoming packets by type
-		identifier_filter - Optional. Filters incoming packets with identifier field by identifier
 		timeout - function throws timeout error if no packet received
+		filter - function that takes in an ICMP packet and returns True if it passes the filter
 		'''
 
 		start_time = time.time()
@@ -142,13 +145,6 @@ class ICMP:
 			except ValueError:
 				continue
 
-			# Applying filters, returning accordingly
-			if type_filter is None:
+			# Applying filter, returning accordingly
+			if filter(ret):
 				return ret
-			elif type_filter == ret._type:
-				if ((ret._type == ICMPType.ECHO_REQUEST or ret._type == ICMPType.ECHO_REPLY) and 
-				     identifier_filter is not None):
-					if identifier_filter == ret._type_fields["Identifier"]:
-						return ret
-				else:
-					return ret

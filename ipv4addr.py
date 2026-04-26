@@ -1,8 +1,8 @@
-from typing import Union, Self
+from typing import Self
 
 
 class IPv4Address:
-	def __init__(self, addr: Union[bytes, str]):
+	def __init__(self, addr: bytes | str | int):
 		'''
 		Doesn't check validity of string
 		'''

@@ -1,4 +1,4 @@
-from typing import Union, Self
+from typing import Self
 import struct
 import time
 from enum import Enum
@@ -16,7 +16,7 @@ class ARP:
 	cache = {}
 
 	def __init__(self, target_ip: IPv4Address, sender_ip: IPv4Address, opcode: ARPOpcode=ARPOpcode.REQUEST, 
-			  	 sender_physical: MAC=Ethernet.host_addr, target_physical: MAC=Ethernet.broadcast):
+			  	 sender_physical: MAC=None, target_physical: MAC=Ethernet.broadcast):
 		'''
 		Constructs ARP packet, saves into payload class member.
 
@@ -40,6 +40,8 @@ class ARP:
 
 		# Sender physical & protocol addresses
 		self.sender_physical = sender_physical
+		if self.sender_physical == None:
+			self.sender_physical = Ethernet.host_addr
 
 		self.sender_virtual = sender_ip
 
@@ -101,7 +103,7 @@ class ARP:
 		return ret
 
 	@classmethod
-	def recv(cls, socket: Socket, timeout: int=1, filter: Union[Self, None]=None) -> Self:
+	def recv(cls, socket: Socket, timeout: int=1, filter: Self | None=None) -> Self:
 		'''
 		Receives an ARP packet. Doesn't check cache. For cache + recv use query classmethod
 		timeout - timeout for response before exception thrown (in seconds)

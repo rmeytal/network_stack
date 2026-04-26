@@ -1,4 +1,4 @@
-from typing import Self, Union
+from typing import Self, Callable
 from enum import Enum
 import struct
 import random
@@ -23,7 +23,7 @@ class TCP:
 	def __init__(self, destination: tuple[IPv4Address, int], 
 				 seq: int, ack: int, flags: int, window: int, 
 				 data: bytes,
-				 urgent_pointer: int=0, source: tuple[IPv4Address, int]=(IP.host_addr, random.randint(1024, 0xffff))
+				 urgent_pointer: int=0, source: tuple[IPv4Address | None, int]=(None, random.randint(1024, 0xffff))
 				):
 		self._source_port = source[1]
 		self._destination_port = destination[1]
@@ -56,7 +56,7 @@ class TCP:
 		# Header currently doesn't support options
 		raw_header = struct.pack("!HHIIBBHHH", self._source_port, 
 						   		 self._destination_port, self._seq, 
-								 self._ack, 0, self._flags,
+								 self._ack, self._header_len << 4, self._flags,
 								 self._window, 0, self._urgent_pointer)
 
 		payload = raw_header + self._data
@@ -97,6 +97,9 @@ class TCP:
 		Takes in a raw TCP packet
 		Returns as a TCP instance
 		'''	
+		if packet._protocol != IPProtocolType.TCP:
+			raise ValueError("'packet' protocol must be TCP")
+		
 		ret = object.__new__(cls)
 		
 		# Header currently doesn't support options
@@ -124,16 +127,16 @@ class TCP:
 		return ret
 
 	@classmethod
-	def recv(cls, socket: Socket,
-		  	 source_filter: Union[tuple[IPv4Address, int], None]=None, timeout: int=1
-			) -> Union[Self, ICMP]:
+	def recv(cls, socket: Socket, timeout: int=1,
+		  	 filter: Callable[[Self, ICMP], bool]=(lambda _: True), include_icmp: bool=False
+			) -> Self | ICMP:
 		'''
 		Receives a TCP packet or corresponding response if source specified
 		Blocks until receives a packet
 
-		source_filter - Optional variable. Will only return a relevant packet from the specified source.
-		ICMP packets will only be returned if the source is filtered and an ICMP packet is received from the source.
 		timeout - exception raised if no TCP packet received before timeout runs out
+		filter - Function that takes in packets and returns a boolean if the packet passes the filter
+		include_icmp - True if the filter should take in all ICMP packets too, otherwise false
 		'''
 
 		start_time = time.time()
@@ -141,41 +144,23 @@ class TCP:
 			if (time.time() - start_time) > timeout:
 				raise TimeoutError("No TCP packet received")
 				
-			packet = IP.recv(socket)
+			packet = IP.recv(socket, timeout=timeout)
 
-			if (packet._protocol == IPProtocolType.TCP or 
-			    (packet._protocol == IPProtocolType.ICMP and source_filter != None)
-			   ):
-				# Implements source filter
-				if source_filter != None:
-					# Checks if IP address matches
-					if packet._source == source_filter[0]:
-						# If TCP, checks if port matches and returns TCP
-						if packet._protocol == IPProtocolType.TCP:
-							try:
-								ret = TCP.parse(packet)
-							except ChecksumError:
-								continue
+			if packet._protocol == IPProtocolType.TCP:
+				try:
+					ret = TCP.parse(packet)
+				except ChecksumError:
+					continue
 
-							if ret._source_port == source_filter[1]:
-								return ret
-						# If ICMP, checks if message type is relevant and returns ICMP
-						else:
-							try:
-								ret = ICMP.parse(packet)
-							except ChecksumError:
-								continue
+				# Applying filter
+				if filter(ret):
+					return ret
+			elif packet._protocol == IPProtocolType.ICMP and include_icmp:
+				try:
+					ret = ICMP.parse(packet)
+				except ChecksumError:
+					continue
 
-							if ret._type == ICMPType.DESTINATION_UNREACHABLE or ret._type == ICMPType.TIME_EXCEEDED:
-								# Verifying port of packet being responded to matches source_filter
-								# No need to check checksum, since it will definitely be valid (ICMP already checked)
-								response_to = TCP.parse(IP.parse(ret._data))
-								if response_to._destination_port == source_filter[1]:
-									return ret
-							
-				# If not filtered then protocol is definitely TCP; crafts and returns packet
-				else:
-					try:
-						return TCP.parse(packet)
-					except ChecksumError:
-						continue
+				# Applying filter
+				if filter(ret):
+					return ret

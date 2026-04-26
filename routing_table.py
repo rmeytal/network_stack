@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Union, Self
+from typing import Self
 
 from ipv4addr import IPv4Address
 from ethernet import MAC, Ethernet
@@ -25,7 +25,7 @@ class RoutingAction(Enum):
 class RoutingEntry:
 	def __init__(self, address: IPv4Address, mask: IPv4Address, 
 			      interface: IPv4Address, action: RoutingAction, 
-				  gateway: Union[IPv4Address, None]=None
+				  gateway: IPv4Address | None=None
 				 ):
 		
 		if action == RoutingAction.GATEWAY and gateway is None:

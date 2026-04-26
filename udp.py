@@ -1,11 +1,11 @@
-from typing import Union, Self
+from typing import Callable, Self
 import random
 import struct
 import time
 
 from ipv4addr import IPv4Address
 from ip import IP, IPProtocolType, ChecksumError
-from icmp import ICMP, ICMPType
+from icmp import ICMP
 from l2socket import Socket
 
 
@@ -89,6 +89,9 @@ class UDP:
 		Takes in a raw UDP packet
 		Returns as a UDP instance
 		'''	
+		if packet._protocol != IPProtocolType.UDP:
+			raise ValueError("'packet' protocol must be UDP")
+		
 		ret = object.__new__(cls)
 		
 		# Parsing header fields
@@ -113,16 +116,16 @@ class UDP:
 		return ret
 
 	@classmethod
-	def recv(cls, socket: Socket,
-		  	 source_filter: Union[tuple[IPv4Address, int], None]=None, timeout: int=1
-			) -> Union[Self, ICMP]:
+	def recv(cls, socket: Socket, timeout: int=1, 
+			 filter: Callable[[Self | ICMP], bool]=(lambda _: True), include_icmp: bool=False
+			) -> Self | ICMP:
 		'''
 		Receives a UDP packet or corresponding response if source specified
 		Blocks until receives a packet
 
-		source_filter - Optional variable. Will only return a relevant packet from the specified source.
-		ICMP packets will only be returned if the source is filtered and an ICMP packet is received from the source.
 		timeout - exception raised if no UDP packet received before timeout runs out
+		filter - Function that takes in packets and returns a boolean if the packet passes the filter
+		include_icmp - True if the filter should take in all ICMP packets too, otherwise false
 		'''
 
 		start_time = time.time()
@@ -130,41 +133,21 @@ class UDP:
 			if (time.time() - start_time) > timeout:
 				raise TimeoutError("No UDP packet received")
 			
-			packet = IP.recv(socket)
+			packet = IP.recv(socket, timeout=timeout)
 
-			if (packet._protocol == IPProtocolType.UDP or 
-			    (packet._protocol == IPProtocolType.ICMP and source_filter != None)
-			   ):
-				# Implements source filter
-				if source_filter != None:
-					# Checks if IP address matches
-					if packet._source == source_filter[0]:
-						# If UDP, checks if port matches and returns UDP
-						if packet._protocol == IPProtocolType.UDP:
-							try:
-								ret = UDP.parse(packet)
-							except ChecksumError:
-								continue
+			if packet._protocol == IPProtocolType.UDP:
+				try:
+					ret = UDP.parse(packet)
+				except ChecksumError:
+					continue
 
-							if ret._source_port == source_filter[1]:
-								return ret
-						# If ICMP, checks if message type is relevant and returns ICMP
-						else:
-							try:
-								ret = ICMP.parse(packet)
-							except ChecksumError:
-								continue
-
-							if ret._type == ICMPType.DESTINATION_UNREACHABLE or ret._type == ICMPType.TIME_EXCEEDED:
-								# Verifying port of packet being responded to matches source_filter
-								# No need to check checksum, since it will definitely be valid (ICMP already checked)
-								response_to = UDP.parse(IP.parse(ret._data))
-								if response_to._destination_port == source_filter[1]:
-									return ret
-							
-				# If not filtered then protocol is definitely UDP; crafts and returns packet
-				else:
-					try:
-						return UDP.parse(packet)
-					except ChecksumError:
-						continue
+				if filter(ret):
+					return ret
+			elif packet._protocol == IPProtocolType.ICMP and include_icmp:
+				try:
+					ret = ICMP.parse(packet)
+				except ChecksumError:
+					continue
+				
+				if filter(ret):
+					return ret

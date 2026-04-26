@@ -1,6 +1,6 @@
 import struct
 from enum import Enum
-from typing import Self, Union
+from typing import Self, Callable
 import time
 
 from ipv4addr import IPv4Address
@@ -33,9 +33,9 @@ class IP:
 	routing_table = None
 
 	def __init__(self, destination: IPv4Address, 
-				 data: bytes, source: Union[IPv4Address, None]=None, 
+				 data: bytes, source: IPv4Address | None=None, 
 				 ttl: int=128, protocol: IPProtocolType=IPProtocolType.TCP,
-				 destination_mac: Union[MAC, None]=None
+				 destination_mac: MAC | None=None
 				):
 		'''
 		destination - Target IP address
@@ -135,7 +135,6 @@ class IP:
 		Crafts pseudoheader for Layer 4 checksum calculation
 		length - length of Layer 4 protocol segment
 		'''
-
 		pseudo_header = struct.pack("!4s4sBBH", 
 							  		self._source.addr, self._destination.addr, 
 									0, self._protocol.value, length)
@@ -211,7 +210,7 @@ class IP:
 		return ret
 
 	@classmethod
-	def recv(cls, socket: Socket, timeout: int=1) -> Self:
+	def recv(cls, socket: Socket, timeout: int=1, filter: Callable[[Self], bool]=(lambda _: True)) -> Self:
 		'''
 		Receives an IP packet, returns IP object with first IP packet recevied.
 		Blocking function
@@ -229,9 +228,13 @@ class IP:
 			if frame is not None:
 				if frame.type == EtherType.IPv4:
 					try:
-						return IP.parse(frame.data)
+						ret = IP.parse(frame.data)
 					except ChecksumError:
 						continue
+
+					# Applying filter
+					if filter(ret):
+						return ret
 	
 	@staticmethod
 	def _calculate_checksum(raw: bytes) -> int:

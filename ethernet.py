@@ -1,12 +1,12 @@
 import struct
 from enum import Enum
-from typing import Union, Self
+from typing import Self
 
 from l2socket import Socket
 
 
 class MAC:
-	def __init__(self, addr: Union[bytes, int, str]):
+	def __init__(self, addr: bytes | int | str):
 		'''
 		addr - either an integer or a string representing the MAC address
 		'''
@@ -54,7 +54,7 @@ class Ethernet:
 	host_addr = None
 
 	def __init__(self, destination: MAC, data: bytes, 
-			  	 type: Union[EtherType, None]=EtherType.IPv4, source: MAC=host_addr):
+			  	 type: EtherType | None=EtherType.IPv4, source: MAC=None):
 		'''
 		destination - MAC object
 		data - bytes
@@ -64,6 +64,8 @@ class Ethernet:
 		'''
 		self.destination = destination
 		self.source = source
+		if self.source == None:
+			self.source = Ethernet.host_addr
 		self.type = type 
 		self.data = data
 
@@ -104,7 +106,7 @@ class Ethernet:
 							
 
 	@classmethod
-	def recv(cls, socket: Socket) -> Union[Self, None]:
+	def recv(cls, socket: Socket) -> Self | None:
 		'''
 		Non-blocking function. Receives an ethernet frame and returns it parsed into
 		an 'Ethernet' instance.
