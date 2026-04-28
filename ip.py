@@ -169,13 +169,13 @@ class IP:
 
 
 	@classmethod
-	def parse(cls, raw_packet: bytes) -> Self:
+	def parse(cls, frame: Ethernet) -> Self:
 		'''
 		Takes a raw IP packet
 		Returns packet parsed into IP object
 		'''
-		raw_header = raw_packet[:20]
-		parsed_header = struct.unpack("!BBHHHBBH4s4s", raw_packet[:20])
+		raw_header = frame.data[:20]
+		parsed_header = struct.unpack("!BBHHHBBH4s4s", frame.data[:20])
 		ret = object.__new__(cls)
 
 		ret._version = parsed_header[0] >> 4
@@ -205,7 +205,7 @@ class IP:
 		ret._destination_mac = None
 
 		# Indexing until total_length to avoid including filler bytes
-		ret._data = raw_packet[20:ret._total_length]
+		ret._data = frame.data[20:ret._total_length]
 
 		return ret
 
@@ -228,7 +228,7 @@ class IP:
 			if frame is not None:
 				if frame.type == EtherType.IPv4:
 					try:
-						ret = IP.parse(frame.data)
+						ret = IP.parse(frame)
 					except ChecksumError:
 						continue
 

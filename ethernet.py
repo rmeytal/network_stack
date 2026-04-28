@@ -1,6 +1,6 @@
 import struct
 from enum import Enum
-from typing import Self
+from typing import Self, Callable
 
 from l2socket import Socket
 
@@ -90,7 +90,7 @@ class Ethernet:
 			   )
 
 	@classmethod
-	def parse(cls, raw_frame) -> Self:
+	def parse(cls, raw_frame: bytes) -> Self:
 		'''
 		Takes in a raw frame
 		Returns Ethernet object
@@ -106,13 +106,18 @@ class Ethernet:
 							
 
 	@classmethod
-	def recv(cls, socket: Socket) -> Self | None:
+	def recv(cls, socket: Socket, filter: Callable[[Self], bool]=(lambda _: True)) -> Self | None:
 		'''
 		Non-blocking function. Receives an ethernet frame and returns it parsed into
 		an 'Ethernet' instance.
 
 		socket - Socket object to recv from
+		filter - optional filter function. Must return boolean.
 		'''
-
 		raw_frame = socket.recv()
-		return Ethernet.parse(raw_frame) if raw_frame else None
+		if raw_frame is not None:
+			frame = Ethernet.parse(raw_frame)
+			if filter(frame):
+				return frame
+			
+		return None

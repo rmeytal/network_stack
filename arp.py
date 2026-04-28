@@ -1,4 +1,4 @@
-from typing import Self
+from typing import Self, Callable
 import struct
 import time
 from enum import Enum
@@ -77,7 +77,7 @@ class ARP:
 			   )
 
 	@classmethod
-	def parse(cls, raw_packet: bytes) -> Self:
+	def parse(cls, frame: Ethernet) -> Self:
 		'''
 		Takes in raw_packet, return ARP object
 		'''
@@ -90,7 +90,7 @@ class ARP:
 		 ret._opcode, 
 		 ret.sender_physical, ret.sender_virtual, 
 		 ret.target_physical, ret.target_virtual
-		) = struct.unpack("!HHBBH6s4s6s4s", raw_packet[:28])
+		) = struct.unpack("!HHBBH6s4s6s4s", frame.data[:28])
 
 		ret._protocol_type = EtherType(ret._protocol_type)
 		ret._opcode = ARPOpcode(ret._opcode)
@@ -103,7 +103,7 @@ class ARP:
 		return ret
 
 	@classmethod
-	def recv(cls, socket: Socket, timeout: int=1, filter: Self | None=None) -> Self:
+	def recv(cls, socket: Socket, timeout: int=1, filter: Callable[[Self], bool]=(lambda _: True)) -> Self:
 		'''
 		Receives an ARP packet. Doesn't check cache. For cache + recv use query classmethod
 		timeout - timeout for response before exception thrown (in seconds)
@@ -125,20 +125,12 @@ class ARP:
 		
 			if resp is not None:
 				if resp.type == EtherType.ARP:
-					ret = ARP.parse(resp.data[:28])
+					ret = ARP.parse(resp)
 
 					ARP.cache[ret.sender_virtual.addr] = ret.sender_physical
 
-					# If there's no filter, return first ARP packet received
-					if filter is None:
-						return ret
-				
-					# If packet isn't a response
-					if ret._opcode != ARPOpcode.RESPONSE:
-						continue
-					
-					# If the filter's target matches received packet's sending address, then returns the response
-					if filter.target_virtual == ret.sender_virtual:
+					# Returns if passes filter
+					if filter(ret):
 						return ret
 			
 	@classmethod
@@ -154,4 +146,16 @@ class ARP:
 		request = cls(target, source)
 		request.send(socket)
 
-		return cls.recv(socket, filter=request).sender_physical
+		def response_filter(response):
+			# If packet isn't a response
+			if response._opcode != ARPOpcode.RESPONSE:
+				return False
+					
+			# If the request's target doesn't matche received packet's sending address
+			if request.target_virtual != response.sender_virtual:
+				return False
+			
+			# If both conditions met, passes filter
+			return True
+
+		return cls.recv(socket, filter=response_filter).sender_physical
